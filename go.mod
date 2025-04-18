@@ -1,6 +1,8 @@
 module github.com/mkusaka/terraform-moved-remover
 
-go 1.18
+go 1.24
+
+toolchain go1.24.2
 
 require github.com/hashicorp/hcl/v2 v2.23.0
 

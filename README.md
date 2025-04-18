@@ -16,17 +16,25 @@ This tool helps clean up Terraform configurations by removing all `moved` direct
 
 ## Requirements
 
-- Go 1.16 or later
+- Go 1.24 or later
 
 ## Installation
 
 ### From Source
 
 ```bash
-git clone https://github.com/yourusername/terraform-moved-remover.git
+git clone https://github.com/mkusaka/terraform-moved-remover.git
 cd terraform-moved-remover
 go build -o terraform-moved-remover cmd/main.go
 ```
+
+### Using Go Install
+
+```bash
+go install github.com/mkusaka/terraform-moved-remover/cmd@latest
+```
+
+This will install the binary in your `$GOPATH/bin` directory.
 
 ## Usage
 
