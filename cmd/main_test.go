@@ -1,0 +1,202 @@
+package main
+
+import (
+	"io/ioutil"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+)
+
+// TestFindTerraformFiles tests the findTerraformFiles function
+func TestFindTerraformFiles(t *testing.T) {
+	// Create a temporary directory for testing
+	tempDir, err := ioutil.TempDir("", "terraform-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Create test files
+	testFiles := []string{
+		filepath.Join(tempDir, "main.tf"),
+		filepath.Join(tempDir, "variables.tf"),
+		filepath.Join(tempDir, "nested", "module.tf"),
+		filepath.Join(tempDir, "nested", "deep", "resource.tf"),
+		filepath.Join(tempDir, "not-terraform.txt"),
+	}
+
+	// Create directories
+	os.MkdirAll(filepath.Join(tempDir, "nested", "deep"), 0755)
+
+	// Create files
+	for _, file := range testFiles {
+		dir := filepath.Dir(file)
+		if _, err := os.Stat(dir); os.IsNotExist(err) {
+			os.MkdirAll(dir, 0755)
+		}
+		ioutil.WriteFile(file, []byte("test content"), 0644)
+	}
+
+	// Test finding files
+	files, err := findTerraformFiles(tempDir)
+	if err != nil {
+		t.Fatalf("findTerraformFiles failed: %v", err)
+	}
+
+	// We should find 4 .tf files
+	if len(files) != 4 {
+		t.Errorf("Expected to find 4 .tf files, but found %d", len(files))
+	}
+
+	// Test with non-existent directory
+	_, err = findTerraformFiles("/non-existent-dir")
+	if err == nil {
+		t.Errorf("Expected error for non-existent directory, but got nil")
+	}
+}
+
+// TestProcessFile tests the processFile function
+func TestProcessFile(t *testing.T) {
+	// Create a temporary directory for testing
+	tempDir, err := ioutil.TempDir("", "terraform-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Create a test file with moved blocks
+	testFile := filepath.Join(tempDir, "test.tf")
+	content := `
+resource "aws_instance" "web" {
+  ami           = "ami-123456"
+  instance_type = "t2.micro"
+}
+
+moved {
+  from = aws_instance.old
+  to   = aws_instance.web
+}
+
+resource "aws_s3_bucket" "data" {
+  bucket = "my-bucket"
+}
+
+moved {
+  from = aws_s3_bucket.logs
+  to   = aws_s3_bucket.data
+}
+`
+	err = ioutil.WriteFile(testFile, []byte(content), 0644)
+	if err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	// Process the file
+	stats := Stats{
+		StartTime: time.Now(),
+	}
+	err = processFile(testFile, &stats)
+	if err != nil {
+		t.Fatalf("processFile failed: %v", err)
+	}
+
+	// Check statistics
+	if stats.FilesProcessed != 1 {
+		t.Errorf("Expected FilesProcessed to be 1, but got %d", stats.FilesProcessed)
+	}
+	if stats.FilesModified != 1 {
+		t.Errorf("Expected FilesModified to be 1, but got %d", stats.FilesModified)
+	}
+	if stats.MovedBlocksRemoved != 2 {
+		t.Errorf("Expected MovedBlocksRemoved to be 2, but got %d", stats.MovedBlocksRemoved)
+	}
+
+	// Read the modified file
+	modifiedContent, err := ioutil.ReadFile(testFile)
+	if err != nil {
+		t.Fatalf("Failed to read modified file: %v", err)
+	}
+
+	// Check that moved blocks are removed
+	if string(modifiedContent) == content {
+		t.Errorf("File content was not modified")
+	}
+
+	// Test with non-existent file
+	err = processFile("/non-existent-file.tf", &stats)
+	if err == nil {
+		t.Errorf("Expected error for non-existent file, but got nil")
+	}
+
+	// Test with invalid HCL
+	invalidFile := filepath.Join(tempDir, "invalid.tf")
+	err = ioutil.WriteFile(invalidFile, []byte("this is not valid HCL"), 0644)
+	if err != nil {
+		t.Fatalf("Failed to write invalid file: %v", err)
+	}
+
+	err = processFile(invalidFile, &stats)
+	if err == nil {
+		t.Errorf("Expected error for invalid HCL, but got nil")
+	}
+}
+
+// TestMainFunction tests the main function indirectly
+func TestMainFunction(t *testing.T) {
+	// Save original os.Args and os.Exit
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+
+	// Create a temporary directory for testing
+	tempDir, err := ioutil.TempDir("", "terraform-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Create test files
+	testFile := filepath.Join(tempDir, "main.tf")
+	content := `
+resource "aws_instance" "web" {
+  ami           = "ami-123456"
+  instance_type = "t2.micro"
+}
+
+moved {
+  from = aws_instance.old
+  to   = aws_instance.web
+}
+`
+	err = ioutil.WriteFile(testFile, []byte(content), 0644)
+	if err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	// Test with valid directory
+	os.Args = []string{"cmd", tempDir}
+	
+	// We can't directly test main() because it calls os.Exit
+	// Instead, we'll test the individual components that main calls
+	stats := Stats{
+		StartTime: time.Now(),
+	}
+	
+	files, err := findTerraformFiles(tempDir)
+	if err != nil {
+		t.Fatalf("findTerraformFiles failed: %v", err)
+	}
+	
+	if len(files) != 1 {
+		t.Errorf("Expected to find 1 .tf file, but found %d", len(files))
+	}
+	
+	err = processFile(files[0], &stats)
+	if err != nil {
+		t.Fatalf("processFile failed: %v", err)
+	}
+	
+	if stats.MovedBlocksRemoved != 1 {
+		t.Errorf("Expected MovedBlocksRemoved to be 1, but got %d", stats.MovedBlocksRemoved)
+	}
+}
