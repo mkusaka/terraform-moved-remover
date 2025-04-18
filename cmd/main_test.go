@@ -1,7 +1,6 @@
 package main
 
 import (
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,7 +10,7 @@ import (
 // TestFindTerraformFiles tests the findTerraformFiles function
 func TestFindTerraformFiles(t *testing.T) {
 	// Create a temporary directory for testing
-	tempDir, err := ioutil.TempDir("", "terraform-test")
+	tempDir, err := os.MkdirTemp("", "terraform-test")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
@@ -27,15 +26,21 @@ func TestFindTerraformFiles(t *testing.T) {
 	}
 
 	// Create directories
-	os.MkdirAll(filepath.Join(tempDir, "nested", "deep"), 0755)
+	if err := os.MkdirAll(filepath.Join(tempDir, "nested", "deep"), 0755); err != nil {
+		t.Fatalf("Failed to create nested directories: %v", err)
+	}
 
 	// Create files
 	for _, file := range testFiles {
 		dir := filepath.Dir(file)
 		if _, err := os.Stat(dir); os.IsNotExist(err) {
-			os.MkdirAll(dir, 0755)
+			if err := os.MkdirAll(dir, 0755); err != nil {
+				t.Fatalf("Failed to create directory %s: %v", dir, err)
+			}
 		}
-		ioutil.WriteFile(file, []byte("test content"), 0644)
+		if err := os.WriteFile(file, []byte("test content"), 0644); err != nil {
+			t.Fatalf("Failed to write file %s: %v", file, err)
+		}
 	}
 
 	// Test finding files
@@ -59,7 +64,7 @@ func TestFindTerraformFiles(t *testing.T) {
 // TestProcessFile tests the processFile function
 func TestProcessFile(t *testing.T) {
 	// Create a temporary directory for testing
-	tempDir, err := ioutil.TempDir("", "terraform-test")
+	tempDir, err := os.MkdirTemp("", "terraform-test")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
@@ -87,7 +92,7 @@ moved {
   to   = aws_s3_bucket.data
 }
 `
-	err = ioutil.WriteFile(testFile, []byte(content), 0644)
+	err = os.WriteFile(testFile, []byte(content), 0644)
 	if err != nil {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
@@ -113,7 +118,7 @@ moved {
 	}
 
 	// Read the modified file
-	modifiedContent, err := ioutil.ReadFile(testFile)
+	modifiedContent, err := os.ReadFile(testFile)
 	if err != nil {
 		t.Fatalf("Failed to read modified file: %v", err)
 	}
@@ -131,7 +136,7 @@ moved {
 
 	// Test with invalid HCL
 	invalidFile := filepath.Join(tempDir, "invalid.tf")
-	err = ioutil.WriteFile(invalidFile, []byte("this is not valid HCL"), 0644)
+	err = os.WriteFile(invalidFile, []byte("this is not valid HCL"), 0644)
 	if err != nil {
 		t.Fatalf("Failed to write invalid file: %v", err)
 	}
@@ -149,7 +154,7 @@ func TestMainFunction(t *testing.T) {
 	defer func() { os.Args = oldArgs }()
 
 	// Create a temporary directory for testing
-	tempDir, err := ioutil.TempDir("", "terraform-test")
+	tempDir, err := os.MkdirTemp("", "terraform-test")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
@@ -168,7 +173,7 @@ moved {
   to   = aws_instance.web
 }
 `
-	err = ioutil.WriteFile(testFile, []byte(content), 0644)
+	err = os.WriteFile(testFile, []byte(content), 0644)
 	if err != nil {
 		t.Fatalf("Failed to write test file: %v", err)
 	}

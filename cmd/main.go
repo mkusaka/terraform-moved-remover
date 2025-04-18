@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -44,7 +44,7 @@ func findTerraformFiles(rootDir string) ([]string, error) {
 // It returns true if the file was modified, false otherwise
 func processFile(filePath string, stats *Stats) error {
 	// Read file content
-	content, err := ioutil.ReadFile(filePath)
+	content, err := os.ReadFile(filePath)
 	if err != nil {
 		return fmt.Errorf("error reading file %s: %w", filePath, err)
 	}
@@ -76,7 +76,7 @@ func processFile(filePath string, stats *Stats) error {
 		stats.MovedBlocksRemoved += movedBlocksCount
 
 		// Write modified content back to file
-		err = ioutil.WriteFile(filePath, file.Bytes(), 0644)
+		err = os.WriteFile(filePath, file.Bytes(), 0644)
 		if err != nil {
 			return fmt.Errorf("error writing file %s: %w", filePath, err)
 		}
