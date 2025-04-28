@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"os"
@@ -74,17 +75,29 @@ func processFile(filePath string, stats *Stats) error {
 
 	// Update statistics
 	stats.FilesProcessed++
-	if fileModified {
-		stats.FilesModified++
-		stats.MovedBlocksRemoved += movedBlocksCount
-
-		// Write modified content back to file only if not in dry run mode
-		if !stats.DryRun {
-			err = os.WriteFile(filePath, file.Bytes(), 0644)
+	
+	// Apply formatting to all files, not just those with moved blocks
+	// Write modified content back to file only if not in dry run mode
+	if !stats.DryRun {
+		// Format the file content
+		formattedContent := hclwrite.Format(file.Bytes())
+		
+		if fileModified || !bytes.Equal(formattedContent, content) {
+			stats.FilesModified++
+			
+			if fileModified {
+				stats.MovedBlocksRemoved += movedBlocksCount
+			}
+			
+			err = os.WriteFile(filePath, formattedContent, 0644)
 			if err != nil {
 				return fmt.Errorf("error writing file %s: %w", filePath, err)
 			}
 		}
+	} else if fileModified {
+		// In dry run mode, just update stats for moved blocks
+		stats.FilesModified++
+		stats.MovedBlocksRemoved += movedBlocksCount
 	}
 
 	return nil
@@ -94,7 +107,8 @@ func processFile(filePath string, stats *Stats) error {
 func printUsage() {
 	fmt.Println("Terraform Moved Directive Remover")
 	fmt.Println("--------------------------------")
-	fmt.Println("This tool recursively scans Terraform files and removes all 'moved' blocks.")
+	fmt.Println("This tool recursively scans Terraform files, removes all 'moved' blocks,")
+	fmt.Println("and applies standard Terraform formatting to the files.")
 	fmt.Println()
 	fmt.Println("Usage: terraform-moved-remover [options] <directory>")
 	fmt.Println()
