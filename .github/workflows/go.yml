@@ -23,7 +23,7 @@ jobs:
         cache: true
 
     - name: Build
-      run: go build -o terraform-moved-remover -v .
+      run: go build -o terraform-moved-remover -v ./cmd/terraform-moved-remover
 
     - name: Test
       run: go test -v ./...
