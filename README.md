@@ -25,13 +25,13 @@ This tool helps clean up Terraform configurations by removing all `moved` direct
 ```bash
 git clone https://github.com/mkusaka/terraform-moved-remover.git
 cd terraform-moved-remover
-go build -o terraform-moved-remover main.go
+go build -o terraform-moved-remover cmd/terraform-moved-remover/main.go
 ```
 
 ### Using Go Install
 
 ```bash
-go install github.com/mkusaka/terraform-moved-remover@latest
+go install github.com/mkusaka/terraform-moved-remover/cmd/terraform-moved-remover@latest
 ```
 
 This will install the binary in your `$GOPATH/bin` directory.
