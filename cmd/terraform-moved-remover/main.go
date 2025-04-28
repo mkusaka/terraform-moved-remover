@@ -110,7 +110,8 @@ func printUsage() {
 	fmt.Println("This tool recursively scans Terraform files, removes all 'moved' blocks,")
 	fmt.Println("and applies standard Terraform formatting to the files.")
 	fmt.Println()
-	fmt.Println("Usage: terraform-moved-remover [options] <directory>")
+	fmt.Println("Usage: terraform-moved-remover [options] [directory]")
+	fmt.Println("       If directory is not specified, the current directory will be used.")
 	fmt.Println()
 	fmt.Println("Options:")
 	flag.PrintDefaults()
@@ -138,13 +139,11 @@ func main() {
 	}
 	
 	args := flag.Args()
-	if len(args) < 1 {
-		fmt.Println("Error: No directory specified.")
-		printUsage()
-		os.Exit(1)
-	}
+	rootDir := "."  // Default to current directory
 	
-	rootDir := args[0]
+	if len(args) > 0 {
+		rootDir = args[0]
+	}
 	
 	// Verify directory exists
 	info, err := os.Stat(rootDir)
