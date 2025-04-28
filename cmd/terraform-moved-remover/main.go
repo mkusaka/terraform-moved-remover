@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +12,8 @@ import (
 	"github.com/hashicorp/hcl/v2/hclwrite"
 )
 
+const Version = "0.1.0"
+
 // Stats tracks statistics about the processing
 type Stats struct {
 	FilesProcessed     int
@@ -18,6 +21,7 @@ type Stats struct {
 	MovedBlocksRemoved int
 	StartTime          time.Time
 	EndTime            time.Time
+	DryRun             bool
 }
 
 // findTerraformFiles recursively finds all .tf files in the given directory
@@ -74,10 +78,12 @@ func processFile(filePath string, stats *Stats) error {
 		stats.FilesModified++
 		stats.MovedBlocksRemoved += movedBlocksCount
 
-		// Write modified content back to file
-		err = os.WriteFile(filePath, file.Bytes(), 0644)
-		if err != nil {
-			return fmt.Errorf("error writing file %s: %w", filePath, err)
+		// Write modified content back to file only if not in dry run mode
+		if !stats.DryRun {
+			err = os.WriteFile(filePath, file.Bytes(), 0644)
+			if err != nil {
+				return fmt.Errorf("error writing file %s: %w", filePath, err)
+			}
 		}
 	}
 
@@ -90,38 +96,60 @@ func printUsage() {
 	fmt.Println("--------------------------------")
 	fmt.Println("This tool recursively scans Terraform files and removes all 'moved' blocks.")
 	fmt.Println()
-	fmt.Println("Usage: terraform-moved-remover <directory>")
+	fmt.Println("Usage: terraform-moved-remover [options] <directory>")
 	fmt.Println()
-	fmt.Println("Example: terraform-moved-remover ./terraform")
+	fmt.Println("Options:")
+	flag.PrintDefaults()
 	fmt.Println()
 }
 
 func main() {
-	// Check command line arguments
-	if len(os.Args) < 2 {
+	helpFlag := flag.Bool("help", false, "Display help information")
+	versionFlag := flag.Bool("version", false, "Display version information")
+	dryRunFlag := flag.Bool("dry-run", false, "Run without modifying files")
+	verboseFlag := flag.Bool("verbose", false, "Enable verbose output")
+	
+	flag.Usage = printUsage
+	
+	flag.Parse()
+	
+	if *helpFlag {
+		printUsage()
+		os.Exit(0)
+	}
+	
+	if *versionFlag {
+		fmt.Printf("Terraform Moved Directive Remover v%s\n", Version)
+		os.Exit(0)
+	}
+	
+	args := flag.Args()
+	if len(args) < 1 {
+		fmt.Println("Error: No directory specified.")
 		printUsage()
 		os.Exit(1)
 	}
-
-	rootDir := os.Args[1]
-
+	
+	rootDir := args[0]
+	
 	// Verify directory exists
 	info, err := os.Stat(rootDir)
 	if err != nil {
 		fmt.Printf("Error: %s\n", err)
 		os.Exit(1)
 	}
-
+	
 	if !info.IsDir() {
 		fmt.Printf("Error: %s is not a directory\n", rootDir)
 		os.Exit(1)
 	}
-
+	
 	// Initialize statistics
 	stats := Stats{
 		StartTime: time.Now(),
+		DryRun:    *dryRunFlag,
 	}
-
+	
 	// Find all Terraform files
 	fmt.Printf("Scanning directory: %s\n", rootDir)
 	files, err := findTerraformFiles(rootDir)
@@ -130,21 +158,27 @@ func main() {
 		os.Exit(1)
 	}
 	fmt.Printf("Found %d Terraform files\n", len(files))
-
+	
 	// Process each file
 	for _, file := range files {
+		if *verboseFlag {
+			fmt.Printf("Processing: %s\n", file)
+		}
 		err := processFile(file, &stats)
 		if err != nil {
 			fmt.Printf("Error processing %s: %s\n", file, err)
 		}
 	}
-
+	
 	// Record end time
 	stats.EndTime = time.Now()
 	duration := stats.EndTime.Sub(stats.StartTime)
-
+	
 	// Print statistics
 	fmt.Printf("\nStatistics:\n")
+	if stats.DryRun {
+		fmt.Println("DRY RUN MODE: No files were modified")
+	}
 	fmt.Printf("Files processed: %d\n", stats.FilesProcessed)
 	fmt.Printf("Files modified: %d\n", stats.FilesModified)
 	fmt.Printf("Moved blocks removed: %d\n", stats.MovedBlocksRemoved)

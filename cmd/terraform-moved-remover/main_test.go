@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"os"
 	"path/filepath"
 	"testing"
@@ -179,7 +180,8 @@ moved {
 	}
 
 	// Test with valid directory
-	os.Args = []string{"cmd", tempDir}
+	os.Args = []string{"cmd", "-dry-run=false", tempDir}
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError) // Reset flags for testing
 	
 	// We can't directly test main() because it calls os.Exit
 	// Instead, we'll test the individual components that main calls
@@ -203,5 +205,64 @@ moved {
 	
 	if stats.MovedBlocksRemoved != 1 {
 		t.Errorf("Expected MovedBlocksRemoved to be 1, but got %d", stats.MovedBlocksRemoved)
+	}
+}
+
+func TestFlagHandling(t *testing.T) {
+	// Save original os.Args and flag.CommandLine
+	oldArgs := os.Args
+	oldFlagCommandLine := flag.CommandLine
+	defer func() { 
+		os.Args = oldArgs 
+		flag.CommandLine = oldFlagCommandLine
+	}()
+	
+	// Create a temporary directory for testing
+	tempDir, err := os.MkdirTemp("", "terraform-flag-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+	
+	// Create a test file with moved blocks
+	testFile := filepath.Join(tempDir, "test.tf")
+	content := `
+resource "aws_instance" "web" {
+  ami           = "ami-123456"
+  instance_type = "t2.micro"
+}
+
+moved {
+  from = aws_instance.old
+  to   = aws_instance.web
+}
+`
+	err = os.WriteFile(testFile, []byte(content), 0644)
+	if err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+	
+	os.Args = []string{"cmd", "-dry-run", tempDir}
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	
+	// Instead of calling main(), create Stats and test processFile with DryRun=true
+	stats := Stats{
+		StartTime: time.Now(),
+		DryRun:    true,
+	}
+	
+	err = processFile(testFile, &stats)
+	if err != nil {
+		t.Fatalf("processFile failed: %v", err)
+	}
+	
+	// Read the file after processing - it should remain unchanged due to dry run
+	modifiedContent, err := os.ReadFile(testFile)
+	if err != nil {
+		t.Fatalf("Failed to read file after dry run: %v", err)
+	}
+	
+	if string(modifiedContent) != content {
+		t.Errorf("Dry run mode modified the file, but it shouldn't have")
 	}
 }
