@@ -39,8 +39,10 @@ This will install the binary in your `$GOPATH/bin` directory.
 ## Usage
 
 ```bash
-./terraform-moved-remover [options] <directory>
+./terraform-moved-remover [options] [directory]
 ```
+
+If directory is not specified, the current directory will be used.
 
 ### Options
 
