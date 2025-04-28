@@ -10,6 +10,7 @@ This tool helps clean up Terraform configurations by removing all `moved` direct
 
 - Recursively scans directories for `.tf` files
 - Identifies and removes all `moved` blocks
+- Applies standard Terraform formatting to files
 - Modifies files in-place
 - Reports detailed statistics about the changes made
 - Uses Terraform's HCL parser for accurate syntax handling

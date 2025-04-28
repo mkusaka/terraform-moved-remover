@@ -4,6 +4,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -145,6 +146,42 @@ moved {
 	err = processFile(invalidFile, &stats)
 	if err == nil {
 		t.Errorf("Expected error for invalid HCL, but got nil")
+	}
+	
+	unformattedFile := filepath.Join(tempDir, "unformatted.tf")
+	unformattedContent := `
+resource "aws_instance" "web" {
+ami = "ami-123456"
+  instance_type   =     "t2.micro"
+}
+`
+	err = os.WriteFile(unformattedFile, []byte(unformattedContent), 0644)
+	if err != nil {
+		t.Fatalf("Failed to write unformatted file: %v", err)
+	}
+
+	// Process the file (should format it)
+	err = processFile(unformattedFile, &stats)
+	if err != nil {
+		t.Fatalf("processFile failed for formatting test: %v", err)
+	}
+
+	// Read the formatted file
+	formattedContent, err := os.ReadFile(unformattedFile)
+	if err != nil {
+		t.Fatalf("Failed to read formatted file: %v", err)
+	}
+
+	// Check that the file was formatted (should have consistent indentation)
+	if string(formattedContent) == unformattedContent {
+		t.Errorf("File was not formatted")
+	}
+
+	formattedString := string(formattedContent)
+	t.Logf("Formatted content: %s", formattedString)
+	
+	if !strings.Contains(formattedString, "  ami") {
+		t.Errorf("Formatting did not properly indent attributes")
 	}
 }
 
