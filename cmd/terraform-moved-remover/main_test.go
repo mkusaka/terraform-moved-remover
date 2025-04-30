@@ -303,3 +303,74 @@ moved {
 		t.Errorf("Dry run mode modified the file, but it shouldn't have")
 	}
 }
+
+// after removing consecutive moved blocks
+func TestConsecutiveMovedBlocksFormatting(t *testing.T) {
+	// Create a temporary directory for testing
+	tempDir, err := os.MkdirTemp("", "terraform-consecutive-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Create a test file with consecutive moved blocks
+	testFile := filepath.Join(tempDir, "consecutive_moved.tf")
+	content := `resource "aws_instance" "example" {
+  ami           = "ami-0c55b159cbfafe1f0"
+  instance_type = "t2.micro"
+}
+
+moved {
+  from = aws_instance.old1
+  to   = aws_instance.new1
+}
+moved {
+  from = aws_instance.old2
+  to   = aws_instance.new2
+}
+moved {
+  from = aws_instance.old3
+  to   = aws_instance.new3
+}
+
+resource "aws_s3_bucket" "example" {
+  bucket = "my-example-bucket"
+}
+`
+	err = os.WriteFile(testFile, []byte(content), 0644)
+	if err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	// Process the file
+	stats := Stats{
+		StartTime: time.Now(),
+	}
+	err = processFile(testFile, &stats)
+	if err != nil {
+		t.Fatalf("processFile failed: %v", err)
+	}
+
+	// Read the processed file
+	processedContent, err := os.ReadFile(testFile)
+	if err != nil {
+		t.Fatalf("Failed to read processed file: %v", err)
+	}
+
+	processedStr := string(processedContent)
+	t.Logf("Processed content:\n%s", processedStr)
+
+	if strings.Contains(processedStr, "\n\n\n") {
+		t.Errorf("Found consecutive empty lines in the processed file")
+	}
+
+	// Verify that moved blocks were removed
+	if strings.Contains(processedStr, "moved {") {
+		t.Errorf("Found moved blocks in the processed file")
+	}
+
+	expectedPattern := "}\n\nresource"
+	if !strings.Contains(processedStr, expectedPattern) {
+		t.Errorf("Expected exactly one empty line between resources, but found different formatting")
+	}
+}

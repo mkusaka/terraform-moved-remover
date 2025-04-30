@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -81,6 +82,11 @@ func processFile(filePath string, stats *Stats) error {
 	if !stats.DryRun {
 		// Format the file content
 		formattedContent := hclwrite.Format(file.Bytes())
+		
+		if fileModified {
+			re := regexp.MustCompile(`\n{3,}`)
+			formattedContent = re.ReplaceAll(formattedContent, []byte("\n\n"))
+		}
 		
 		if fileModified || !bytes.Equal(formattedContent, content) {
 			stats.FilesModified++
