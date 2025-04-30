@@ -82,6 +82,11 @@ func processFile(filePath string, stats *Stats) error {
 		// Format the file content
 		formattedContent := hclwrite.Format(file.Bytes())
 		
+		// Fix excessive newlines that may result from removing consecutive moved blocks
+		if fileModified {
+			formattedContent = normalizeConsecutiveNewlines(formattedContent)
+		}
+		
 		if fileModified || !bytes.Equal(formattedContent, content) {
 			stats.FilesModified++
 			
@@ -101,6 +106,23 @@ func processFile(filePath string, stats *Stats) error {
 	}
 
 	return nil
+}
+
+// in the formatted content after removing moved blocks
+func normalizeConsecutiveNewlines(content []byte) []byte {
+	contentStr := string(content)
+	
+	re := strings.NewReplacer("\n\n\n", "\n\n", "\r\n\r\n\r\n", "\r\n\r\n")
+	
+	for {
+		newContent := re.Replace(contentStr)
+		if newContent == contentStr {
+			break
+		}
+		contentStr = newContent
+	}
+	
+	return []byte(contentStr)
 }
 
 // printUsage prints the usage information for the script

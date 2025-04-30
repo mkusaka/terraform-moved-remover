@@ -303,3 +303,87 @@ moved {
 		t.Errorf("Dry run mode modified the file, but it shouldn't have")
 	}
 }
+
+// TestConsecutiveMovedBlocks tests formatting when multiple consecutive moved blocks are removed
+func TestConsecutiveMovedBlocks(t *testing.T) {
+	// Create a temporary directory for testing
+	tempDir, err := os.MkdirTemp("", "terraform-consecutive-moved-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Create a test file with consecutive moved blocks
+	testFile := filepath.Join(tempDir, "consecutive_moved.tf")
+	content := `
+resource "aws_instance" "web" {
+  ami           = "ami-123456"
+  instance_type = "t2.micro"
+}
+
+moved {
+  from = aws_instance.old1
+  to   = aws_instance.web
+}
+
+moved {
+  from = aws_instance.old2
+  to   = aws_instance.web
+}
+
+moved {
+  from = aws_instance.old3
+  to   = aws_instance.web
+}
+
+resource "aws_s3_bucket" "data" {
+  bucket = "my-bucket"
+}
+`
+	err = os.WriteFile(testFile, []byte(content), 0644)
+	if err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	// Process the file
+	stats := Stats{
+		StartTime: time.Now(),
+	}
+	err = processFile(testFile, &stats)
+	if err != nil {
+		t.Fatalf("processFile failed: %v", err)
+	}
+
+	// Read the modified file
+	modifiedContent, err := os.ReadFile(testFile)
+	if err != nil {
+		t.Fatalf("Failed to read modified file: %v", err)
+	}
+
+	t.Logf("Modified content: %s", string(modifiedContent))
+
+	// Check that moved blocks are removed
+	if strings.Contains(string(modifiedContent), "moved {") {
+		t.Errorf("File still contains moved blocks after processing")
+	}
+
+	// Check that there are no excessive empty lines
+	lines := strings.Split(string(modifiedContent), "\n")
+	consecutiveEmptyLines := 0
+	maxConsecutiveEmptyLines := 0
+	
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			consecutiveEmptyLines++
+		} else {
+			if consecutiveEmptyLines > maxConsecutiveEmptyLines {
+				maxConsecutiveEmptyLines = consecutiveEmptyLines
+			}
+			consecutiveEmptyLines = 0
+		}
+	}
+	
+	if maxConsecutiveEmptyLines > 2 {
+		t.Errorf("File contains %d consecutive empty lines, expected at most 1", maxConsecutiveEmptyLines-1)
+	}
+}
