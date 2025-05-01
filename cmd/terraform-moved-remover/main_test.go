@@ -345,9 +345,10 @@ resource "aws_s3_bucket" "data" {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	// Process the file
+	// Process the file with whitespace normalization enabled (default)
 	stats := Stats{
-		StartTime: time.Now(),
+		StartTime:           time.Now(),
+		NormalizeWhitespace: true,
 	}
 	err = processFile(testFile, &stats)
 	if err != nil {
@@ -385,5 +386,130 @@ resource "aws_s3_bucket" "data" {
 	
 	if maxConsecutiveEmptyLines > 2 {
 		t.Errorf("File contains %d consecutive empty lines, expected at most 1", maxConsecutiveEmptyLines-1)
+	}
+}
+
+func TestWhitespaceNormalizationFlag(t *testing.T) {
+	// Create a temporary directory for testing
+	tempDir, err := os.MkdirTemp("", "terraform-whitespace-flag-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Test file content with consecutive moved blocks
+	content := `
+resource "aws_instance" "web" {
+  ami           = "ami-123456"
+  instance_type = "t2.micro"
+}
+
+moved {
+  from = aws_instance.old1
+  to   = aws_instance.web
+}
+
+moved {
+  from = aws_instance.old2
+  to   = aws_instance.web
+}
+
+moved {
+  from = aws_instance.old3
+  to   = aws_instance.web
+}
+
+resource "aws_s3_bucket" "data" {
+  bucket = "my-bucket"
+}
+`
+
+	// Test with normalization disabled
+	testFileDisabled := filepath.Join(tempDir, "normalization_disabled.tf")
+	err = os.WriteFile(testFileDisabled, []byte(content), 0644)
+	if err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	statsDisabled := Stats{
+		StartTime:           time.Now(),
+		NormalizeWhitespace: false,
+	}
+	err = processFile(testFileDisabled, &statsDisabled)
+	if err != nil {
+		t.Fatalf("processFile failed with normalization disabled: %v", err)
+	}
+
+	// Read the modified file
+	disabledContent, err := os.ReadFile(testFileDisabled)
+	if err != nil {
+		t.Fatalf("Failed to read modified file: %v", err)
+	}
+
+	t.Logf("Content with normalization disabled: %s", string(disabledContent))
+
+	// Test with normalization enabled
+	testFileEnabled := filepath.Join(tempDir, "normalization_enabled.tf")
+	err = os.WriteFile(testFileEnabled, []byte(content), 0644)
+	if err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	statsEnabled := Stats{
+		StartTime:           time.Now(),
+		NormalizeWhitespace: true,
+	}
+	err = processFile(testFileEnabled, &statsEnabled)
+	if err != nil {
+		t.Fatalf("processFile failed with normalization enabled: %v", err)
+	}
+
+	// Read the modified file
+	enabledContent, err := os.ReadFile(testFileEnabled)
+	if err != nil {
+		t.Fatalf("Failed to read modified file: %v", err)
+	}
+
+	t.Logf("Content with normalization enabled: %s", string(enabledContent))
+
+	disabledLines := strings.Split(string(disabledContent), "\n")
+	disabledConsecutiveEmptyLines := 0
+	disabledMaxConsecutiveEmptyLines := 0
+	
+	for _, line := range disabledLines {
+		if strings.TrimSpace(line) == "" {
+			disabledConsecutiveEmptyLines++
+		} else {
+			if disabledConsecutiveEmptyLines > disabledMaxConsecutiveEmptyLines {
+				disabledMaxConsecutiveEmptyLines = disabledConsecutiveEmptyLines
+			}
+			disabledConsecutiveEmptyLines = 0
+		}
+	}
+	
+	enabledLines := strings.Split(string(enabledContent), "\n")
+	enabledConsecutiveEmptyLines := 0
+	enabledMaxConsecutiveEmptyLines := 0
+	
+	for _, line := range enabledLines {
+		if strings.TrimSpace(line) == "" {
+			enabledConsecutiveEmptyLines++
+		} else {
+			if enabledConsecutiveEmptyLines > enabledMaxConsecutiveEmptyLines {
+				enabledMaxConsecutiveEmptyLines = enabledConsecutiveEmptyLines
+			}
+			enabledConsecutiveEmptyLines = 0
+		}
+	}
+	
+	// With normalization disabled, we expect more consecutive empty lines
+	if disabledMaxConsecutiveEmptyLines <= enabledMaxConsecutiveEmptyLines {
+		t.Errorf("Expected more consecutive empty lines with normalization disabled, but got %d (disabled) vs %d (enabled)",
+			disabledMaxConsecutiveEmptyLines, enabledMaxConsecutiveEmptyLines)
+	}
+	
+	if enabledMaxConsecutiveEmptyLines > 2 {
+		t.Errorf("With normalization enabled, file contains %d consecutive empty lines, expected at most 1", 
+			enabledMaxConsecutiveEmptyLines-1)
 	}
 }

@@ -17,12 +17,13 @@ const Version = "0.1.0"
 
 // Stats tracks statistics about the processing
 type Stats struct {
-	FilesProcessed     int
-	FilesModified      int
-	MovedBlocksRemoved int
-	StartTime          time.Time
-	EndTime            time.Time
-	DryRun             bool
+	FilesProcessed        int
+	FilesModified         int
+	MovedBlocksRemoved    int
+	StartTime             time.Time
+	EndTime               time.Time
+	DryRun                bool
+	NormalizeWhitespace   bool
 }
 
 // findTerraformFiles recursively finds all .tf files in the given directory
@@ -83,7 +84,7 @@ func processFile(filePath string, stats *Stats) error {
 		formattedContent := hclwrite.Format(file.Bytes())
 		
 		// Fix excessive newlines that may result from removing consecutive moved blocks
-		if fileModified {
+		if fileModified && stats.NormalizeWhitespace {
 			formattedContent = normalizeConsecutiveNewlines(formattedContent)
 		}
 		
@@ -145,6 +146,7 @@ func main() {
 	versionFlag := flag.Bool("version", false, "Display version information")
 	dryRunFlag := flag.Bool("dry-run", false, "Run without modifying files")
 	verboseFlag := flag.Bool("verbose", false, "Enable verbose output")
+	normalizeFlag := flag.Bool("normalize-whitespace", true, "Normalize whitespace after removing moved blocks")
 	
 	flag.Usage = printUsage
 	
@@ -181,8 +183,9 @@ func main() {
 	
 	// Initialize statistics
 	stats := Stats{
-		StartTime: time.Now(),
-		DryRun:    *dryRunFlag,
+		StartTime:           time.Now(),
+		DryRun:              *dryRunFlag,
+		NormalizeWhitespace: *normalizeFlag,
 	}
 	
 	// Find all Terraform files
