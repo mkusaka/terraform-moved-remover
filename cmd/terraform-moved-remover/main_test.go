@@ -513,3 +513,82 @@ resource "aws_s3_bucket" "data" {
 			enabledMaxConsecutiveEmptyLines-1)
 	}
 }
+
+func TestTrailingEmptyLines(t *testing.T) {
+	// Create a temporary directory for testing
+	tempDir, err := os.MkdirTemp("", "terraform-trailing-empty-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Create a test file with moved block at the end
+	testFile := filepath.Join(tempDir, "trailing_moved.tf")
+	content := `
+module "hoge" {
+  source = "fuga"
+}
+
+moved {
+  from = aaa
+  to   = bbb
+}
+`
+	err = os.WriteFile(testFile, []byte(content), 0644)
+	if err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	// Process the file with whitespace normalization enabled
+	stats := Stats{
+		StartTime:           time.Now(),
+		NormalizeWhitespace: true,
+	}
+	err = processFile(testFile, &stats)
+	if err != nil {
+		t.Fatalf("processFile failed: %v", err)
+	}
+
+	// Read the modified file
+	modifiedContent, err := os.ReadFile(testFile)
+	if err != nil {
+		t.Fatalf("Failed to read modified file: %v", err)
+	}
+
+	t.Logf("Modified content: %s", string(modifiedContent))
+
+	// Check that moved blocks are removed
+	if strings.Contains(string(modifiedContent), "moved {") {
+		t.Errorf("File still contains moved blocks after processing")
+	}
+
+	// Check that there are no trailing empty lines
+	lines := strings.Split(string(modifiedContent), "\n")
+	
+	// Count trailing empty lines
+	trailingEmptyLines := 0
+	for i := len(lines) - 1; i >= 0; i-- {
+		if strings.TrimSpace(lines[i]) == "" {
+			trailingEmptyLines++
+		} else {
+			break
+		}
+	}
+	
+	if trailingEmptyLines > 1 {
+		t.Errorf("File contains %d trailing empty lines, expected at most 1", trailingEmptyLines)
+	}
+	
+	// The expected content should be just the module block with no trailing empty lines
+	expectedContent := `
+module "hoge" {
+  source = "fuga"
+}
+`
+	normalizedExpected := strings.ReplaceAll(expectedContent, "\r\n", "\n")
+	normalizedActual := strings.ReplaceAll(string(modifiedContent), "\r\n", "\n")
+	
+	if normalizedActual != normalizedExpected {
+		t.Errorf("Expected content:\n%s\nActual content:\n%s", normalizedExpected, normalizedActual)
+	}
+}
