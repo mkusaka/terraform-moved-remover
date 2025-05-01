@@ -17,12 +17,13 @@ const Version = "0.1.0"
 
 // Stats tracks statistics about the processing
 type Stats struct {
-	FilesProcessed     int
-	FilesModified      int
-	MovedBlocksRemoved int
-	StartTime          time.Time
-	EndTime            time.Time
-	DryRun             bool
+	FilesProcessed        int
+	FilesModified         int
+	MovedBlocksRemoved    int
+	StartTime             time.Time
+	EndTime               time.Time
+	DryRun                bool
+	NormalizeWhitespace   bool
 }
 
 // findTerraformFiles recursively finds all .tf files in the given directory
@@ -82,6 +83,11 @@ func processFile(filePath string, stats *Stats) error {
 		// Format the file content
 		formattedContent := hclwrite.Format(file.Bytes())
 		
+		// Fix excessive newlines that may result from removing consecutive moved blocks
+		if fileModified && stats.NormalizeWhitespace {
+			formattedContent = normalizeConsecutiveNewlines(formattedContent)
+		}
+		
 		if fileModified || !bytes.Equal(formattedContent, content) {
 			stats.FilesModified++
 			
@@ -101,6 +107,23 @@ func processFile(filePath string, stats *Stats) error {
 	}
 
 	return nil
+}
+
+// in the formatted content after removing moved blocks
+func normalizeConsecutiveNewlines(content []byte) []byte {
+	contentStr := string(content)
+	
+	re := strings.NewReplacer("\n\n\n", "\n\n", "\r\n\r\n\r\n", "\r\n\r\n")
+	
+	for {
+		newContent := re.Replace(contentStr)
+		if newContent == contentStr {
+			break
+		}
+		contentStr = newContent
+	}
+	
+	return []byte(contentStr)
 }
 
 // printUsage prints the usage information for the script
@@ -123,6 +146,7 @@ func main() {
 	versionFlag := flag.Bool("version", false, "Display version information")
 	dryRunFlag := flag.Bool("dry-run", false, "Run without modifying files")
 	verboseFlag := flag.Bool("verbose", false, "Enable verbose output")
+	normalizeFlag := flag.Bool("normalize-whitespace", true, "Normalize whitespace after removing moved blocks")
 	
 	flag.Usage = printUsage
 	
@@ -159,8 +183,9 @@ func main() {
 	
 	// Initialize statistics
 	stats := Stats{
-		StartTime: time.Now(),
-		DryRun:    *dryRunFlag,
+		StartTime:           time.Now(),
+		DryRun:              *dryRunFlag,
+		NormalizeWhitespace: *normalizeFlag,
 	}
 	
 	// Find all Terraform files
