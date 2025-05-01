@@ -13,7 +13,7 @@ import (
 	"github.com/hashicorp/hcl/v2/hclwrite"
 )
 
-const Version = "0.1.0"
+const Version = "0.0.3"
 
 // Stats tracks statistics about the processing
 type Stats struct {
