@@ -51,7 +51,7 @@ If directory is not specified, the current directory will be used.
 - `-version`: Display version information
 - `-dry-run`: Run without modifying files
 - `-verbose`: Enable verbose output
-- `-normalize-whitespace`: Control whitespace normalization after removing moved blocks (default: true)
+- `-normalize-whitespace`: Control whitespace normalization after removing moved blocks (default: false)
 
 ### Example
 
