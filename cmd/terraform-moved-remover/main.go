@@ -109,7 +109,7 @@ func processFile(filePath string, stats *Stats) error {
 	return nil
 }
 
-// in the formatted content after removing moved blocks
+// in the formatted content after removing moved blocks, and also removes trailing empty lines
 func normalizeConsecutiveNewlines(content []byte) []byte {
 	contentStr := string(content)
 	
@@ -121,6 +121,15 @@ func normalizeConsecutiveNewlines(content []byte) []byte {
 			break
 		}
 		contentStr = newContent
+	}
+	
+	// First, normalize line endings to \n for processing
+	contentStr = strings.ReplaceAll(contentStr, "\r\n", "\n")
+	
+	contentStr = strings.TrimRight(contentStr, "\n") + "\n"
+	
+	if bytes.Contains(content, []byte("\r\n")) {
+		contentStr = strings.ReplaceAll(contentStr, "\n", "\r\n")
 	}
 	
 	return []byte(contentStr)
