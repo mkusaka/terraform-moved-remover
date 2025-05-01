@@ -146,7 +146,7 @@ func main() {
 	versionFlag := flag.Bool("version", false, "Display version information")
 	dryRunFlag := flag.Bool("dry-run", false, "Run without modifying files")
 	verboseFlag := flag.Bool("verbose", false, "Enable verbose output")
-	normalizeFlag := flag.Bool("normalize-whitespace", true, "Normalize whitespace after removing moved blocks")
+	normalizeFlag := flag.Bool("normalize-whitespace", false, "Normalize whitespace after removing moved blocks")
 	
 	flag.Usage = printUsage
 	
