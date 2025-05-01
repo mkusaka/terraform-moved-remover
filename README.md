@@ -80,6 +80,15 @@ Processing time: 235.412ms
 
 The tool uses HashiCorp's HCL library to parse Terraform files and manipulate the Abstract Syntax Tree (AST). This ensures proper handling of Terraform's syntax and maintains formatting of the files.
 
+### Formatting Details
+
+The tool uses `hclwrite.Format` to apply standard Terraform formatting to files. This function:
+
+- Takes source code as input and performs simple whitespace changes to transform it to a canonical layout style
+- Adjusts indentation, spaces between tokens, and aligns elements vertically
+- Has no configurable options - it applies a fixed set of formatting rules
+- Is the same formatter used by the `terraform fmt` command
+
 ## License
 
 MIT
