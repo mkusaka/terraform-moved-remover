@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/hcl/v2"
+	"github.com/hashicorp/hcl/v2/hclsyntax"
 	"github.com/hashicorp/hcl/v2/hclwrite"
 )
 
@@ -54,47 +55,81 @@ func processFile(filePath string, stats *Stats) error {
 		return fmt.Errorf("error reading file %s: %w", filePath, err)
 	}
 
-	// Parse HCL file
-	file, diags := hclwrite.ParseConfig(content, filePath, hcl.Pos{Line: 1, Column: 1})
+	// Parse with hclsyntax to get block ranges that exclude leading comments
+	syntaxFile, diags := hclsyntax.ParseConfig(content, filePath, hcl.Pos{Line: 1, Column: 1})
 	if diags.HasErrors() {
 		return fmt.Errorf("error parsing %s: %s", filePath, diags.Error())
 	}
 
-	// Track if file was modified
-	fileModified := false
-	movedBlocksCount := 0
+	syntaxBody, ok := syntaxFile.Body.(*hclsyntax.Body)
+	if !ok {
+		return fmt.Errorf("unexpected body type in %s", filePath)
+	}
 
-	// Find and remove moved blocks
-	body := file.Body()
-	for _, block := range body.Blocks() {
-		if block.Type() == "moved" {
-			body.RemoveBlock(block)
-			movedBlocksCount++
-			fileModified = true
+	// Collect byte ranges of moved blocks (SrcRange excludes leading comments)
+	type byteRange struct {
+		start, end int
+	}
+	var movedRanges []byteRange
+	for _, block := range syntaxBody.Blocks {
+		if block.Type == "moved" {
+			r := block.Range()
+			movedRanges = append(movedRanges, byteRange{start: r.Start.Byte, end: r.End.Byte})
 		}
 	}
 
+	movedBlocksCount := len(movedRanges)
+	fileModified := movedBlocksCount > 0
+
 	// Update statistics
 	stats.FilesProcessed++
-	
-	// Apply formatting to all files, not just those with moved blocks
+
 	// Write modified content back to file only if not in dry run mode
 	if !stats.DryRun {
+		resultContent := content
+		if fileModified {
+			// Remove moved blocks from content in reverse order to preserve byte offsets
+			result := make([]byte, len(content))
+			copy(result, content)
+
+			for i := len(movedRanges) - 1; i >= 0; i-- {
+				r := movedRanges[i]
+				start := r.start
+				end := r.end
+
+				// Consume leading whitespace on the same line as `moved`
+				for start > 0 && (result[start-1] == ' ' || result[start-1] == '\t') {
+					start--
+				}
+
+				// Consume trailing newline after closing brace
+				for end < len(result) && (result[end] == '\r' || result[end] == '\n') {
+					end++
+					if result[end-1] == '\n' {
+						break
+					}
+				}
+
+				result = append(result[:start], result[end:]...)
+			}
+			resultContent = result
+		}
+
 		// Format the file content
-		formattedContent := hclwrite.Format(file.Bytes())
-		
+		formattedContent := hclwrite.Format(resultContent)
+
 		// Fix excessive newlines that may result from removing consecutive moved blocks
 		if fileModified && stats.NormalizeWhitespace {
 			formattedContent = normalizeConsecutiveNewlines(formattedContent)
 		}
-		
+
 		if fileModified || !bytes.Equal(formattedContent, content) {
 			stats.FilesModified++
-			
+
 			if fileModified {
 				stats.MovedBlocksRemoved += movedBlocksCount
 			}
-			
+
 			err = os.WriteFile(filePath, formattedContent, 0644)
 			if err != nil {
 				return fmt.Errorf("error writing file %s: %w", filePath, err)

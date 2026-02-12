@@ -248,7 +248,7 @@ resource "aws_instance" "web" {
 	if err != nil {
 		t.Fatalf("Failed to read modified file: %v", err)
 	}
-	
+
 	// The file should be empty or contain only whitespace
 	if len(content) > 0 && len(string(content)) > 0 {
 		contentStr := string(content)
@@ -259,4 +259,175 @@ resource "aws_instance" "web" {
 			}
 		}
 	}
+}
+
+// TestLeadingCommentsPreserved tests that comments preceding moved blocks
+// are NOT removed along with the moved block.
+// This reproduces the issue where hclwrite.RemoveBlock() removes leading
+// comments that are attached to the block as child nodes.
+func TestLeadingCommentsPreserved(t *testing.T) {
+	testDir, err := os.MkdirTemp("", "terraform-comment-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(testDir)
+
+	// Case 1: Comment directly before moved block (no blank line) — gets eaten by RemoveBlock
+	t.Run("comment_directly_before_moved_block", func(t *testing.T) {
+		filePath := filepath.Join(testDir, "case1.tf")
+		input := `resource "aws_instance" "web" {
+  ami           = "ami-123456"
+  instance_type = "t2.micro"
+}
+
+# This comment describes the resource migration
+moved {
+  from = aws_instance.old
+  to   = aws_instance.web
+}
+`
+		if err := os.WriteFile(filePath, []byte(input), 0644); err != nil {
+			t.Fatalf("Failed to write test file: %v", err)
+		}
+
+		stats := Stats{}
+		if err := processFile(filePath, &stats); err != nil {
+			t.Fatalf("processFile failed: %v", err)
+		}
+
+		content, err := os.ReadFile(filePath)
+		if err != nil {
+			t.Fatalf("Failed to read modified file: %v", err)
+		}
+
+		result := string(content)
+		t.Logf("Case 1 output:\n%s", result)
+
+		if strings.Contains(result, "moved {") {
+			t.Error("moved block should have been removed")
+		}
+		// This is the key assertion: the comment should be preserved
+		if !strings.Contains(result, "# This comment describes the resource migration") {
+			t.Error("Leading comment was removed along with the moved block — this is the bug")
+		}
+	})
+
+	// Case 2: Multiple comment lines directly before moved block
+	t.Run("multiple_comments_before_moved_block", func(t *testing.T) {
+		filePath := filepath.Join(testDir, "case2.tf")
+		input := `resource "aws_instance" "web" {
+  ami           = "ami-123456"
+  instance_type = "t2.micro"
+}
+
+# Description of the migration
+# import id: arn:aws:ec2:us-east-1:123456789012:instance/i-1234567890abcdef0
+moved {
+  from = aws_instance.old
+  to   = aws_instance.web
+}
+`
+		if err := os.WriteFile(filePath, []byte(input), 0644); err != nil {
+			t.Fatalf("Failed to write test file: %v", err)
+		}
+
+		stats := Stats{}
+		if err := processFile(filePath, &stats); err != nil {
+			t.Fatalf("processFile failed: %v", err)
+		}
+
+		content, err := os.ReadFile(filePath)
+		if err != nil {
+			t.Fatalf("Failed to read modified file: %v", err)
+		}
+
+		result := string(content)
+		t.Logf("Case 2 output:\n%s", result)
+
+		if !strings.Contains(result, "# Description of the migration") {
+			t.Error("First comment line was removed along with the moved block")
+		}
+		if !strings.Contains(result, "# import id:") {
+			t.Error("Second comment line was removed along with the moved block")
+		}
+	})
+
+	// Case 3: Blank line separates comment from moved block — should survive
+	t.Run("comment_separated_by_blank_line", func(t *testing.T) {
+		filePath := filepath.Join(testDir, "case3.tf")
+		input := `resource "aws_instance" "web" {
+  ami           = "ami-123456"
+  instance_type = "t2.micro"
+}
+
+# This comment is separated by a blank line
+
+moved {
+  from = aws_instance.old
+  to   = aws_instance.web
+}
+`
+		if err := os.WriteFile(filePath, []byte(input), 0644); err != nil {
+			t.Fatalf("Failed to write test file: %v", err)
+		}
+
+		stats := Stats{}
+		if err := processFile(filePath, &stats); err != nil {
+			t.Fatalf("processFile failed: %v", err)
+		}
+
+		content, err := os.ReadFile(filePath)
+		if err != nil {
+			t.Fatalf("Failed to read modified file: %v", err)
+		}
+
+		result := string(content)
+		t.Logf("Case 3 output:\n%s", result)
+
+		// Blank line breaks the lead comment association, so this should survive
+		if !strings.Contains(result, "# This comment is separated by a blank line") {
+			t.Error("Comment separated by blank line was unexpectedly removed")
+		}
+	})
+
+	// Case 4: Comment belongs to the NEXT resource, not the moved block
+	t.Run("comment_between_moved_and_resource", func(t *testing.T) {
+		filePath := filepath.Join(testDir, "case4.tf")
+		input := `resource "aws_instance" "web" {
+  ami           = "ami-123456"
+  instance_type = "t2.micro"
+}
+
+# Describes the S3 bucket below
+moved {
+  from = aws_instance.old
+  to   = aws_instance.web
+}
+
+resource "aws_s3_bucket" "data" {
+  bucket = "my-data-bucket"
+}
+`
+		if err := os.WriteFile(filePath, []byte(input), 0644); err != nil {
+			t.Fatalf("Failed to write test file: %v", err)
+		}
+
+		stats := Stats{}
+		if err := processFile(filePath, &stats); err != nil {
+			t.Fatalf("processFile failed: %v", err)
+		}
+
+		content, err := os.ReadFile(filePath)
+		if err != nil {
+			t.Fatalf("Failed to read modified file: %v", err)
+		}
+
+		result := string(content)
+		t.Logf("Case 4 output:\n%s", result)
+
+		// This comment was directly before the moved block, so hclwrite eats it
+		if !strings.Contains(result, "# Describes the S3 bucket below") {
+			t.Error("Comment that semantically belongs to another resource was removed with the moved block")
+		}
+	})
 }
